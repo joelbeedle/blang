@@ -61,7 +61,6 @@ static void runFile(const char *path) {
 
 int main(int argc, const char *argv[]) {
   initVM();
-  Chunk chunk;
 
   if (argc == 1) {
     repl();
@@ -72,6 +71,5 @@ int main(int argc, const char *argv[]) {
     exit(64);
   }
   freeVM();
-  freeChunk(&chunk);
   return 0;
 }
