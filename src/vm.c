@@ -105,6 +105,17 @@ static NativeResult readFileNative(int argCount, Value *args) {
   return NATIVE_SUCCESS(content);
 }
 
+static NativeResult printlnNative(int argCount, Value *args) {
+  for (int i = 0; i < argCount; i++) {
+    printValue(args[i]);
+    if (i < argCount - 1) {
+      printf(" ");
+    }
+  }
+  printf("\n");
+  return NATIVE_SUCCESS(NIL_VAL);
+}
+
 static void defineNative(const char *name, NativeFn function, int arity) {
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
   push(OBJ_VAL(newNative(function, arity)));
@@ -122,6 +133,7 @@ void initVM() {
 
   defineNative("clock", clockNative, 0);
   defineNative("readFile", readFileNative, 1);
+  defineNative("println", printlnNative, -1);
 }
 
 void freeVM() {
@@ -159,31 +171,41 @@ static bool call(ObjFunction *function, int argCount) {
   return true;
 }
 
-static bool callValue(Value callee, int argCount) {
-  if (IS_OBJ(callee)) {
-    switch (OBJ_TYPE(callee)) {
-    case OBJ_FUNCTION:
-      return call(AS_FUNCTION(callee), argCount);
-    case OBJ_NATIVE: {
-      ObjNative *native = AS_NATIVE(callee);
-
-      if (native->arity != argCount) {
-        runtimeError("Expected %d arguments but got $d", native->arity,
-                     argCount);
-      }
-      NativeResult result = native->function(argCount, vm.stackTop - argCount);
-      if (result.isError) {
-        runtimeError("Native error: %s", AS_CSTRING(result.result));
-        return false;
-      }
-      vm.stackTop -= argCount + 1;
-      push(result.result);
-      return true;
-    }
-    default:
-      break;
-    }
+static inline bool callValue(Value callee, int argCount) {
+  if (!IS_OBJ(callee)) {
+    runtimeError("Can only call functions and classes.");
+    return false;
   }
+
+  Obj *obj = AS_OBJ(callee);
+
+  if (obj->type == OBJ_FUNCTION) {
+    return call((ObjFunction *)obj, argCount);
+  }
+
+  if (obj->type == OBJ_NATIVE) {
+    ObjNative *native = (ObjNative *)obj;
+
+    if (native->arity != -1 && native->arity != argCount) {
+      runtimeError("Expected %d arguments but got %d.", native->arity,
+                   argCount);
+      return false;
+    }
+
+    NativeResult result = native->function(argCount, vm.stackTop - argCount);
+
+    if (result.isError) {
+      runtimeError("Native error: %s", AS_CSTRING(result.result));
+      return false;
+    }
+
+    vm.stackTop -= argCount + 1;
+    *vm.stackTop = result.result;
+    vm.stackTop++;
+    return true;
+  }
+
+  // If not function or native, runtime error
   runtimeError("Can only call functions and classes.");
   return false;
 }
