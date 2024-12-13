@@ -14,6 +14,7 @@ typedef enum {
   TOKEN_SEMICOLON,
   TOKEN_SLASH,
   TOKEN_STAR,
+  TOKEN_COLON,
   // One or two character tokens.
   TOKEN_BANG,
   TOKEN_BANG_EQUAL,
@@ -44,6 +45,10 @@ typedef enum {
   TOKEN_TRUE,
   TOKEN_VAR,
   TOKEN_WHILE,
+  TOKEN_CASE,
+  TOKEN_DEFAULT,
+  TOKEN_SWITCH,
+  TOKEN_BREAK,
 
   TOKEN_ERROR,
   TOKEN_EOF
