@@ -9,13 +9,21 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#define NATIVE_SUCCESS(value)                                                  \
+  ((NativeResult){.isError = false, .result = (value)})
+#define NATIVE_ERROR(message)                                                  \
+  ((NativeResult){.isError = true,                                             \
+                  .result =                                                    \
+                      OBJ_VAL(copyString((message), (int)strlen(message)))})
+
 VM vm;
 
-static Value clockNative(int argCount, Value *args) {
-  return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+static NativeResult clockNative(int argCount, Value *args) {
+  return NATIVE_SUCCESS(NUMBER_VAL((double)clock() / CLOCKS_PER_SEC));
 }
 
 static void resetStack() {
@@ -30,24 +38,76 @@ static void runtimeError(const char *format, ...) {
   va_end(args);
   fputs("\n", stderr);
 
-  for (int i = vm.frameCount - 1; i >= 0; i--) {
-    CallFrame *frame = &vm.frames[i];
-    ObjFunction *function = frame->function;
-    size_t instruction = frame->ip - function->chunk.code - 1;
-    fprintf(stderr, "[line %d] in ", getLine(&function->chunk, instruction));
-    if (function->name == NULL) {
-      fprintf(stderr, "script\n");
-    } else {
-      fprintf(stderr, "%s()\n", function->name->chars);
+  // Print the call stack
+  if (vm.frameCount > 0 && vm.frameCount <= FRAMES_MAX) {
+    for (int i = vm.frameCount - 1; i >= 0; i--) {
+      CallFrame *frame = &vm.frames[i];
+      ObjFunction *function = frame->function;
+
+      if (frame->ip != NULL && frame->ip >= function->chunk.code) {
+        size_t instruction = frame->ip - function->chunk.code - 1;
+        if (instruction < function->chunk.count) {
+          fprintf(stderr, "[line %d] in ",
+                  getLine(&function->chunk, instruction));
+        } else {
+          fprintf(stderr, "[invalid line] in ");
+        }
+      } else {
+        fprintf(stderr, "[unknown line] in ");
+      }
+
+      if (function->name == NULL) {
+        fprintf(stderr, "script\n");
+      } else {
+        fprintf(stderr, "%s()\n", function->name->chars);
+      }
     }
+  } else {
+    fprintf(stderr, "Stack corrupted or invalid.\n");
   }
 
+  // Reset the stack and exit cleanly
   resetStack();
 }
 
-static void defineNative(const char *name, NativeFn function) {
+static NativeResult readFileNative(int argCount, Value *args) {
+  if (argCount != 1) {
+    return NATIVE_ERROR("readFile() takes exactly 1 argument.");
+  }
+
+  if (!IS_STRING(args[0])) {
+    return NATIVE_ERROR("Argument to readFile() must be a string.");
+  }
+
+  const char *path = AS_CSTRING(args[0]);
+  FILE *file = fopen(path, "rb");
+  if (file == NULL) {
+    return NATIVE_ERROR("Failed to open file.");
+  }
+
+  fseek(file, 0L, SEEK_END);
+  long fileSize = ftell(file);
+  rewind(file);
+
+  char *buffer = (char *)malloc(fileSize + 1);
+  if (buffer == NULL) {
+    fclose(file);
+    return NATIVE_ERROR("Out of memory.");
+  }
+
+  size_t bytesRead = fread(buffer, sizeof(char), fileSize, file);
+  buffer[bytesRead] = '\0';
+
+  fclose(file);
+  Value content = OBJ_VAL(copyString(buffer, bytesRead));
+  free(buffer);
+
+  return NATIVE_SUCCESS(content);
+}
+
+static void defineNative(const char *name, NativeFn function, int arity) {
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
-  push(OBJ_VAL(newNative(function)));
+  push(OBJ_VAL(newNative(function, arity)));
   tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
   pop();
   pop();
@@ -60,7 +120,8 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
-  defineNative("clock", clockNative);
+  defineNative("clock", clockNative, 0);
+  defineNative("readFile", readFileNative, 1);
 }
 
 void freeVM() {
@@ -104,10 +165,19 @@ static bool callValue(Value callee, int argCount) {
     case OBJ_FUNCTION:
       return call(AS_FUNCTION(callee), argCount);
     case OBJ_NATIVE: {
-      NativeFn native = AS_NATIVE(callee);
-      Value result = native(argCount, vm.stackTop - argCount);
+      ObjNative *native = AS_NATIVE(callee);
+
+      if (native->arity != argCount) {
+        runtimeError("Expected %d arguments but got $d", native->arity,
+                     argCount);
+      }
+      NativeResult result = native->function(argCount, vm.stackTop - argCount);
+      if (result.isError) {
+        runtimeError("Native error: %s", AS_CSTRING(result.result));
+        return false;
+      }
       vm.stackTop -= argCount + 1;
-      push(result);
+      push(result.result);
       return true;
     }
     default:
@@ -119,7 +189,7 @@ static bool callValue(Value callee, int argCount) {
 }
 
 static bool isFalsey(Value value) {
-  return IS_NIL(value) || IS_BOOL(value) && !AS_BOOL(value);
+  return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
 static void concatenate() {
