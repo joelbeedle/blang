@@ -50,8 +50,9 @@ typedef struct {
 struct ObjString {
   Obj obj;
   int length;
-  char *chars;
+  bool ownsChars;
   uint32_t hash;
+  char chars[];
 };
 
 ObjFunction *newFunction();

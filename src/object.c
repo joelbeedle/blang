@@ -35,11 +35,22 @@ ObjNative *newNative(NativeFn function, int arity) {
   return native;
 }
 
-static ObjString *allocateString(char *chars, int length, uint32_t hash) {
-  ObjString *string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
+static ObjString *allocateString(const char *chars, int length, uint32_t hash,
+                                 bool ownsChars) {
+  // Allocate memory for ObjString and flexible array
+  ObjString *string =
+      (ObjString *)reallocate(NULL, 0, sizeof(ObjString) + length + 1);
+
+  string->obj.type = OBJ_STRING;
   string->length = length;
-  string->chars = chars;
   string->hash = hash;
+  string->ownsChars = ownsChars;
+
+  // Copy characters into the flexible array (source remains const)
+  memcpy(string->chars, chars, length);
+  string->chars[length] = '\0';
+
+  // Intern the string
   tableSet(&vm.strings, string, NIL_VAL);
   return string;
 }
@@ -53,26 +64,43 @@ static uint32_t hashString(const char *key, int length) {
   return hash;
 }
 
-ObjString *takeString(char *chars, int length) {
-  uint32_t hash = hashString(chars, length);
+static ObjString *makeString(const char *chars, int length, uint32_t hash,
+                             bool ownsChars) {
+  // Check if the string already exists in the intern table
   ObjString *interned = tableFindString(&vm.strings, chars, length, hash);
   if (interned != NULL) {
-    FREE_ARRAY(char, chars, length + 1);
+    // If found, return the existing interned string
     return interned;
   }
 
-  return allocateString(chars, length, hash);
+  // Allocate memory for ObjString and flexible array for characters
+  ObjString *string =
+      (ObjString *)allocateObject(sizeof(ObjString) + length + 1, OBJ_STRING);
+
+  string->length = length;
+  string->hash = hash;
+  string->ownsChars = ownsChars;
+
+  // Copy the characters into the flexible array
+  memcpy(string->chars, chars, length);
+  string->chars[length] = '\0';
+
+  // Add the string to the intern table
+  tableSet(&vm.strings, string, NIL_VAL);
+
+  return string;
+}
+
+ObjString *takeString(char *chars, int length) {
+  uint32_t hash = hashString(chars, length);
+  ObjString *string = makeString(chars, length, hash, true);
+  FREE_ARRAY(char, chars, length + 1); // Free the original array
+  return string;
 }
 
 ObjString *copyString(const char *chars, int length) {
   uint32_t hash = hashString(chars, length);
-  ObjString *interned = tableFindString(&vm.strings, chars, length, hash);
-  if (interned != NULL)
-    return interned;
-  char *heapChars = ALLOCATE(char, length + 1);
-  memcpy(heapChars, chars, length);
-  heapChars[length] = '\0';
-  return allocateString(heapChars, length, hash);
+  return makeString(chars, length, hash, true); // Interned and owns its data
 }
 
 static void printFunction(ObjFunction *function) {

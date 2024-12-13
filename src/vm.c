@@ -247,8 +247,19 @@ static InterpretResult run() {
     double a = AS_NUMBER(pop());                                               \
     push(valueType(a op b));                                                   \
   } while (false)
-
+#define BINARY_OP_IN_PLACE(op)                                                 \
+  do {                                                                         \
+    if (!IS_NUMBER(peek(0)) || !IS_NUMBER(peek(1))) {                          \
+      frame->ip = ip;                                                          \
+      runtimeError("Operands must be numbers.");                               \
+      return INTERPRET_RUNTIME_ERROR;                                          \
+    }                                                                          \
+    vm.stackTop[-2] =                                                          \
+        NUMBER_VAL(AS_NUMBER(vm.stackTop[-2]) op AS_NUMBER(vm.stackTop[-1]));  \
+    vm.stackTop--; /* Adjust stack pointer */                                  \
+  } while (false)
   for (;;) {
+
 #ifdef DEBUG_TRACE_EXECUTION
     printf("          ");
     for (Value *slot = vm.stack; slot < vm.stackTop; slot++) {
@@ -317,9 +328,8 @@ static InterpretResult run() {
       break;
     }
     case OP_EQUAL: {
-      Value b = pop();
-      Value a = pop();
-      push(BOOL_VAL(valuesEqual(a, b)));
+      vm.stackTop[-2] = BOOL_VAL(valuesEqual(vm.stackTop[-2], vm.stackTop[-1]));
+      vm.stackTop--;
       break;
     }
     case OP_GREATER:
@@ -332,9 +342,9 @@ static InterpretResult run() {
       if (IS_STRING(peek(0)) && IS_STRING(peek(1))) {
         concatenate();
       } else if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
-        double b = AS_NUMBER(pop());
-        double a = AS_NUMBER(pop());
-        push(NUMBER_VAL(a + b));
+        vm.stackTop[-2] =
+            NUMBER_VAL(AS_NUMBER(vm.stackTop[-2]) + AS_NUMBER(vm.stackTop[-1]));
+        vm.stackTop--;
       } else {
         frame->ip = ip;
         runtimeError("Operands must be two numbers or two strings");
@@ -343,16 +353,16 @@ static InterpretResult run() {
       break;
     }
     case OP_SUBTRACT:
-      BINARY_OP(NUMBER_VAL, -);
+      BINARY_OP_IN_PLACE(-);
       break;
     case OP_MULTIPLY:
-      BINARY_OP(NUMBER_VAL, *);
+      BINARY_OP_IN_PLACE(*);
       break;
     case OP_DIVIDE:
-      BINARY_OP(NUMBER_VAL, /);
+      BINARY_OP_IN_PLACE(/);
       break;
     case OP_NOT:
-      push(BOOL_VAL(isFalsey(pop())));
+      vm.stackTop[-1] = BOOL_VAL(isFalsey(vm.stackTop[-1]));
       break;
     case OP_NEGATE:
       if (!IS_NUMBER(peek(0))) {
@@ -360,7 +370,8 @@ static InterpretResult run() {
         runtimeError("Operand must be a number");
         return INTERPRET_RUNTIME_ERROR;
       }
-      push(NUMBER_VAL(-AS_NUMBER(pop())));
+      vm.stackTop[-1] = NUMBER_VAL(-AS_NUMBER(vm.stackTop[-1]));
+      // push(NUMBER_VAL(-AS_NUMBER(pop())));
       break;
     case OP_PRINT: {
       printValue(pop());
@@ -413,6 +424,7 @@ static InterpretResult run() {
 #undef READ_CONSTANT
 #undef READ_SHORT
 #undef READ_STRING
+#undef BINARY_OP_IN_PLACE
 #undef BINARY_OP
 }
 
