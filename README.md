@@ -1,6 +1,8 @@
 # blang
 
-Bytecode VM for `blang`, inspired by Crafting Interpreters
+`blang`, a language inspired by `lox`
+
+Implemented using VM and bytecode interpreter written in C.
 
 ## Usage
 
@@ -8,3 +10,24 @@ Bytecode VM for `blang`, inspired by Crafting Interpreters
 - `cd blang`
 - `make`
 - `./build/blang <optional: file>`
+
+## Examples
+
+```go
+func fib(n) {
+  if (n < 2) return n;
+  return fib(n - 2) + fib(n - 1);
+}
+```
+
+```go
+func makeCounter() {
+  let count = 0;
+  return fun() {
+    count = count + 1;
+    return count;
+  };
+}
+```
+
+<sub>yes, blang stands for beedlelanguage</sub>
