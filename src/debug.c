@@ -132,6 +132,12 @@ int disassembleInstruction(Chunk *chunk, int offset) {
     }
     return offset;
   } break;
+  case OP_BUILD_LIST:
+    return byteInstruction("OP_BUILD_LIST", chunk, offset);
+  case OP_INDEX_SUBSCR:
+    return simpleInstruction("OP_INDEX_SUBSCR", offset);
+  case OP_STORE_SUBSCR:
+    return simpleInstruction("OP_STORE_SUBSCR", offset);
   case OP_CLOSE_UPVALUE:
     return simpleInstruction("OP_CLOSE_UPVALUE", offset);
   case OP_RETURN:

@@ -30,6 +30,12 @@ static void freeObject(Obj *object) {
     FREE(ObjFunction, object);
     break;
   }
+  case OBJ_LIST: {
+    ObjList *list = (ObjList *)object;
+    FREE_ARRAY(Value *, list->items, list->count);
+    FREE(ObjList, object);
+    break;
+  }
   case OBJ_NATIVE:
     FREE(ObjNative, object);
     break;
